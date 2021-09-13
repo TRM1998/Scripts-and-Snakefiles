@@ -1,0 +1,47 @@
+(RunIDs, ) = glob_wildcards("../../data2/tom/RNA/{dir}/trimmed/reads.trimmed.fastq")
+rule all:
+     input:
+          expand("../../data2/tom/RNA/{dir}/filtered/reads.trimmed.fastq", dir = RunIDs),
+          expand("../../data2/tom/RNA/{dir}/filtered/reads.trimmed.fastq.index", dir = RunIDs),
+          expand("../../data2/tom/RNA/{dir}/nanocompore/eventalign_reads.tsv", dir = RunIDs),
+          expand("../../data2/tom/RNA/{dir}/nanocompore/eventalign_collapsed_reads", dir = RunIDs),
+          expand("../../data2/tom/RNA/{dir}/", dir = RunIDs)
+rule unzip_fastq:
+    input: "../../data2/tom/RNA/{dir}/filtered/reads.trimmed.fastq.gz"
+    output: "../../data2/tom/RNA/{dir}/filtered/reads.trimmed.fastq"
+    shell: "gunzip -c {input} > {output}"
+
+rule nanopolish_index:
+    input: fast5="../../data2/tom/RNA/{dir}/fast5/",
+           fastq="../../data2/tom/RNA/{dir}/filtered/reads.trimmed.fastq",
+           summary="../../data2/tom/RNA/{dir}/fastq/sequencing_summary.txt"
+    output: "../../data2/tom/RNA/{dir}/filtered/reads.trimmed.fastq.index"
+    shell: "development/nanopolish/./nanopolish index -d {input.fast5} {input.fastq} -s {input.summary}"
+
+rule event_align:
+   input: reference="references/transcriptomes/GCF_000146045.2_R64_rna_from_genomic.fna",
+    reads="../../data2/tom/RNA/{dir}/filtered/reads.trimmed.fastq",
+    indexed="../../data2/tom/RNA/{dir}/filtered/reads.trimmed.fastq.index",
+    aligned="../../data2/tom/RNA/{dir}/aligned/transcriptome/aligned_reads.sorted.bam"
+   output: 
+           "../../data2/tom/RNA/{dir}/nanopolish/eventalign_reads.tsv"
+   shell: "development/nanopolish/./nanopolish eventalign --reads {input.reads} --bam {input.aligned} --genome {input.reference} --threads 8 --print-read-names --scale-events --samples > {output}"
+
+rule collapse_per_kmer:
+    input: "../../data2/tom/RNA/{dir}/nanocompore/eventalign_reads.tsv"
+    output: "../../data2/tom/RNA/{dir}/nanocompore/eventalign_collapsed_reads"
+    shell: "development/nanocompore/./nanocompore Eventalign_collapse -t 8 -i {input} -o {output}"
+
+rule sample_comparison:
+   input:
+   1 = "../../data2/tom/RNA/2020-12_KK_11_Yeast_dRNA_WT_6h_R1/nanocompore/eventalign_collapsed_reads.tsv",
+   2 = "../../data2/tom/RNA/2020-12_KK_12_Yeast_dRNA_WT_6h_R2/nanocompore/eventalign_collapsed_reads.tsv",
+   3 = "../../data2/tom/RNA/2020-12_KK_09_Yeast_dRNA_SSS_6h_R1/nanocompore/eventalign_collapsed_reads.tsv",
+   4 = "../../data2/tom/RNA/2020-12_KK_10_Yeast_dRNA_SSS_6h_R2/nanocompore/eventalign_collapsed_reads.tsv",
+   label1 = "WT",
+   label2 = "SSS",
+   reference="references/transcriptomes/GCF_000146045.2_R65_rna_from_genomic.fna"
+   output: "../../data2/tom/RNA/results")
+   shell: "development/nanocompore/./nanocompore sampcomp --file_list1 {input.1},{input.2} --file_list2 {input.3},{input.4} --label1 {input.label1} --label2 {input.label2} --fasta {input.reference} --output {output}"
+
+#Other commands to follow sampComPDB (only accessible though Python api) and SimReads

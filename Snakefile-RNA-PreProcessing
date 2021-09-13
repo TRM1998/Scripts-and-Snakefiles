@@ -1,0 +1,43 @@
+SeqRunIDs, fast5IDs = glob_wildcards("../../data2/tom/RNA/{dir}/fast5/{fast5}.fast5")
+RunIDs, SampleIDs = glob_wildcards("../../data2/tom/RNA/{dir}/fastq/pass/{sample}.fastq")
+rule all:
+     input:
+          expand("../../data2/tom/RNA/{dir}/fastq/", dir = SeqRunIDs),
+          expand("../../data2/tom/RNA/{dir}/fastq/pass/{sample}.fastq", zip, dir = RunIDs, sample = SampleIDs),
+          expand("../../data2/tom/RNA/{dir}/filtered/{sample}.trimmed.fastq", zip,  dir = RunIDs, sample = SampleIDs),
+          expand("../../data2/tom/RNA/{dir}/QC_plots/", dir = RunIDs),
+          expand("../../data2/tom/RNA/{dir}/filtered/reads.trimmed.fastq.gz", dir = RunIDs),
+          expand("../../data2/tom/RNA/{dir}/aligned/transcriptome/aligned_reads.sorted.bam", dir = RunIDs),
+          expand("../../data2/tom/RNA/{dir}/aligned/transcriptome/aligned_reads.sorted.bam.bai", dir = RunIDs)
+
+rule basecalling:
+    input: "../../data2/tom/RNA/{dir}/fast5/"
+    output: directory("../../data2/tom/RNA/{dir}/fastq/")
+    shell: "guppy_basecaller -i {input} -s {output} --trim_strategy none --fast5_out -c rna_r9.4.1_70bps_hac.cfg --device cuda:0"
+
+rule filtering:
+    input: "../../data2/tom/RNA/{dir}/fastq/pass/{sample}.fastq"
+    output: "../../data2/tom/RNA/{dir}/filtered/{sample}.trimmed.fastq"
+    shell: "NanoFilt -q 7 --headcrop 50 {input} > {output}"
+
+rule quality_control_plotting:
+    input: "../../data2/tom/RNA/{dir}/fastq/sequencing_summary.txt"
+    output: directory("../../data2/tom/RNA/{dir}/QC_plots/")
+    shell: "NanoPlot --summary {input} --outdir {output} --N50 --title {wildcards.dir}"
+
+rule merge_trimmed_reads:
+    input:  "../../data2/tom/RNA/{dir}/filtered/"
+    output: "../../data2/tom/RNA/{dir}/filtered/reads.trimmed.fastq.gz"
+    shell: "Rscript development/scripts/merge_fastq.r {input} {output}"
+	
+rule transcriptome_alignment:
+   input: 
+        read="../../data2/tom/RNA/{dir}/filtered/reads.trimmed.fastq.gz",
+        reference="references/transcriptomes/GCF_000146045.2_R64_rna_from_genomic.fna.gz"
+   output: "../../data2/tom/RNA/{dir}/aligned/transcriptome/aligned_reads.sorted.bam"
+   shell: "development/minimap2/./minimap2 -ax map-ont -t 4 -p 0 -N 10 {input.reference} {input.read} | development/samtools-1.12/./samtools sort -o {output}"
+
+rule transcriptome_aligned_read_indexing:
+   input: "../../data2/tom/RNA/{dir}/aligned/transcriptome/aligned_reads.sorted.bam"
+   output: "../../data2/tom/RNA/{dir}/aligned/transcriptome/aligned_reads.sorted.bam.bai"
+   shell: "development/samtools-1.12/./samtools index {input} > {output}"

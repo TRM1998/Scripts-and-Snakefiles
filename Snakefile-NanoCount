@@ -1,0 +1,17 @@
+(RunIDs, ) = glob_wildcards("../../data2/tom/RNA/{dir}/fastq/sequencing_summary.txt")
+rule all:
+    input: 
+         expand("../../data2/tom/RNA/{dir}/NanoCount/aligned_reads.bam", dir = RunIDs),
+         expand("../../data2/tom/RNA/{dir}/NanoCount/transcript_counts.tsv", dir = RunIDs)
+
+rule transcriptome_alignment:
+    input:
+         read="../../data2/tom/RNA/{dir}/filtered/reads.trimmed.fastq.gz",
+         reference="references/transcriptomes/GCF_000146045.2_R64_rna_from_genomic.fna",
+    output: "../../data2/tom/RNA/{dir}/NanoCount/aligned_reads.bam"
+    shell: "development/minimap2/./minimap2 -t 4 -ax map-ont -N 10 {input.reference} {input.read} | development/samtools-1.12/./samtools view -bh > {output}"
+
+rule quantification:
+    input: "../../data2/tom/RNA/{dir}/NanoCount/aligned_reads.bam"
+    output: "../../data2/tom/RNA/{dir}/NanoCount/transcript_counts.tsv"
+    shell: "NanoCount -i {input} -o {output}"

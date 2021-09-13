@@ -1,0 +1,54 @@
+#RunIDs, SampleIDs =  glob_wildcards("../../data2/tom/RNA/{dir}/filtered/{sample}.fastq")
+(RunIDs, ) = glob_wildcards("../../data2/tom/RNA/{dir}/fastq/sequencing_summary.txt")
+rule all:
+    input: 
+         expand("../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.fastq.gz", dir = RunIDs),
+         expand("../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.fastq", dir = RunIDs),
+         expand("../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.fastq.index", dir = RunIDs),
+         expand("../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.aligned.bam", dir = RunIDs),
+         expand("../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.sorted.bam", dir = RunIDs),
+         expand("../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.sorted.bam.bai", dir = RunIDs),
+         expand("../../data2/tom/RNA/{dir}/poly-A-nanopolish/polya_tails.tsv", dir = RunIDs)
+
+rule merge_trimmed_reads:
+    input: "../../data2/tom/RNA/{dir}/fastq/pass/"
+    output: "../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.fastq.gz"
+    shell: "Rscript development/scripts/merge_fastq.r {input} {output}"
+
+rule unzip_fastq:
+    input: "../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.fastq.gz"
+    output: "../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.fastq"
+    shell: "gunzip -c {input} > {output}"
+
+rule nanopolish_index:
+    input: dir="../../data2/tom/RNA/{dir}/fast5/",
+           summary="../../data2/tom/RNA/{dir}/fastq/sequencing_summary.txt",
+           fastq="../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.fastq"
+    output: "../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.fastq.index"
+    shell: "development/nanopolish/./nanopolish index --directory={input.dir} --sequencing-summary={input.summary} {input.fastq}"
+
+rule genome_alignment:
+    input:
+         read="../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.fastq",
+         reference="references/genomes/GCF_000146045.2_R64_genomic.fna",
+         index="../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.fastq.index"
+    output: "../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.aligned.bam"
+    shell: "development/minimap2/./minimap2 -a -x map-ont {input.reference} {input.read} | development/samtools-1.12/./samtools view -b - -o {output}"
+
+rule sort:
+    input: "../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.aligned.bam"
+    output: "../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.sorted.bam"
+    shell: "development/samtools-1.12/./samtools sort {input} -o {output}"
+
+rule index:
+    input: "../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.sorted.bam"
+    output: "../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.sorted.bam.bai"
+    shell: "development/samtools-1.12/./samtools index {input} > {output}"
+
+rule poly_A_length:
+    input: fastq ="../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.fastq",
+           bam = "../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.sorted.bam",
+           indexed = "../../data2/tom/RNA/{dir}/poly-A-nanopolish/polyA.sorted.bam.bai",
+           reference = "references/genomes/GCF_000146045.2_R64_genomic.fna"
+    output: tails = "../../data2/tom/RNA/{dir}/poly-A-nanopolish/polya_tails.tsv"
+    shell: "development/nanopolish/./nanopolish polya --threads=8 --reads={input.fastq} --bam={input.bam} --genome={input.reference} > {output.tails}"
